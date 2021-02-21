@@ -61,7 +61,7 @@ Example
 --------
 
 ```python
-from apitools import downloadonce
+from apistblzs import downloadonce
 
 # Global Settings
 downloadonce.dumpdir = './.dlo_dump'
@@ -99,7 +99,7 @@ Example
 -------
 
 ```python
-from apitools import ratecontrol
+from apistblzs import ratecontrol
 
 # Restrict 1 times per sec
 @ratecontrol.ratecontrol()
@@ -154,7 +154,7 @@ Example
 -------
 
 ```python
-from apitools import wait_and_retry
+from apistblzs import wait_and_retry
 
 # Wait 5 seconds if failed, retry 5 times.
 # After max retry, raise WaitAndRetryMaxRetryOver exception.
