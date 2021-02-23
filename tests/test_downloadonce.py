@@ -58,9 +58,11 @@ class TestDownloadOnce(object):
         assert result01 == result02
 
     def test_on_disk(self):
-        assert not os.path.isfile(os.path.join(dumpdir, "on_disk_1"))
+        fname = 'on_disk_c4ca4238a0b923820dcc509a6f75849b'
+        assert not os.path.isfile(os.path.join(dumpdir, fname))
+
         result01 = self.func_on_disk(1)
-        assert os.path.isfile(os.path.join(dumpdir, "on_disk_1"))
+        assert os.path.isfile(os.path.join(dumpdir, fname))
         result02 = self.func_on_disk(1)
         assert result01 == result02
 
