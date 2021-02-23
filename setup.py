@@ -12,13 +12,13 @@ def _requires_from_file(filename):
 
 setup(
     name="apistblz",
-    version="0.1.1",
+    version="0.1.2",
     license="MIT",
     description="Tools to use external web api for download data.",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
-    author="nfstg@gmail.com",
-    url="https://github.com/nfwstg/apistblz",
+    author="nfwprod@gmail.com",
+    url="https://github.com/nfwprod/apistblz",
     packages=find_packages("src"),
     package_dir={"": "src"},
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
