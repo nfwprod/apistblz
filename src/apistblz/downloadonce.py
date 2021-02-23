@@ -2,7 +2,7 @@ import pickle
 import os
 import copy
 import shutil
-import datetime
+import hashlib
 from .exceptions import *
 
 
@@ -14,28 +14,45 @@ reportmode = None
 # Internal Variables
 dlo_memory = {}
 prefix_list = []
+keytable = {}
 
 
-# Internal Functions
-def _check_disk(keystring):
-    return os.path.isfile(_dumptarget(keystring))
+# Common
+def _generate_keystring(is_method, prefix, args, kwargs):
+    if is_method:
+        desc = '_'.join(
+                [str(x) for x in args[1:]] +
+                ['{}-{}'.format(x, y) for x, y in sorted(
+                    kwargs.items(), key=lambda x:x[0])])
+    else:
+        desc = '_'.join(
+                [str(x) for x in args] +
+                ['{}-{}'.format(x, y) for x, y in sorted(
+                    kwargs.items(), key=lambda x:x[0])])
+
+    hashed_desc = hashlib.md5(desc.encode()).hexdigest()
+    keystring = '{}_{}'.format(prefix, hashed_desc)
+
+    if keystring in keytable.keys():
+        if desc != keytable[keystring]:
+            raise DownloadOnceDuplexHash()
+    else:
+        keytable[keystring] = desc
+        with open(_keytablepath(), 'wb') as fd:
+            pickle.dump(keytable, fd)
+    return keystring
 
 
-def _dumptarget(keystring):
+def _filepath(keystring):
     if not os.path.isdir(dumpdir):
         os.makedirs(dumpdir)
     return os.path.join(dumpdir, "{}".format(keystring))
 
 
-def _dump_to_disk(keystring, data):
-    with open(_dumptarget(keystring), 'wb') as f:
-        pickle.dump(data, f)
-
-
-def _load_from_disk(keystring):
-    with open(_dumptarget(keystring), 'rb') as f:
-        data = pickle.load(f)
-    return data
+def _keytablepath():
+    if not os.path.isdir(dumpdir):
+        os.makedirs(dumpdir)
+    return os.path.join(dumpdir, "keytable")
 
 
 def _report(line):
@@ -43,7 +60,23 @@ def _report(line):
         print(line)
 
 
-# External Functions
+# Function for data on disk
+def _check_disk(keystring):
+    return os.path.isfile(_filepath(keystring))
+
+
+def _dump_to_disk(keystring, data):
+    with open(_filepath(keystring), 'wb') as fd:
+        pickle.dump(data, fd)
+
+
+def _load_from_disk(keystring):
+    with open(_filepath(keystring), 'rb') as fd:
+        data = pickle.load(fd)
+    return data
+
+
+# Functions for users
 def clear():
     if os.path.isdir(dumpdir):
         shutil.rmtree(dumpdir)
@@ -59,17 +92,16 @@ def uncache(keystring):
 
     if kestring in dlo_memory.keys():
         del dlo_memory[keystring]
-    if os.path.isfile(_dumptarget(keystring)):
-        os.remove(_dumptarget(keystring))
+    if os.path.isfile(_filepath(keystring)):
+        os.remove(_filepath(keystring))
 
 
 def dump():
-    ctime = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-
     for k, v in dlo_memory.items():
         _dump_to_disk(k, v)
 
 
+# Decorator
 def downloadonce(prefix, on_disk=False, is_method=False):
     """Decorator to download data through API or from cache.
 
@@ -100,46 +132,38 @@ def downloadonce(prefix, on_disk=False, is_method=False):
     special_args = ['force_run', 'not_save_on_disk', 'dlo_cmd']
 
     def dlo_deco(func):
-        def _generate_keystring(is_method, prefix, args, kwargs):
-            if is_method:
-                keystring = '_'.join(
-                    [prefix] +
-                    [str(x) for x in args[1:]] +
-                    ['{}_{}'.format(x, y) for x, y in sorted(
-                        kwargs.items(), key=lambda x:x[0])]
-                )
-            else:
-                keystring = '_'.join(
-                    [prefix] +
-                    [str(x) for x in args] +
-                    ['{}_{}'.format(x, y) for x, y in sorted(
-                        kwargs.items(), key=lambda x:x[0])]
-                        )
-            return keystring
-
         def _get(keystring, force_run, not_save_on_disk, *args, **kwargs):
             global dlo_memory
+
+            def _get_from_memory():
+                _report(
+                    "[downloadonce] Return from memory {}".format(keystring))
+                return dlo_memory[keystring]
+
+            def _get_from_disk():
+                _report("[downloadonce] Return from disk {}".format(keystring))
+                output = _load_from_disk(keystring)
+                dlo_memory[keystring] = output
+                return output
+
+            def _get_from_func():
+                _report("[downloadonce] Download {}".format(keystring))
+                output = func(*args, **kwargs)
+                dlo_memory[keystring] = output
+                if (force_on_disk or on_disk) and not not_save_on_disk:
+                    _dump_to_disk(keystring, output)
+                return output
 
             # Get output
             output = None
             if force_run:
-                _report("[downloadonce] Download {}".format(keystring))
-                output = func(*args, **kwargs)
+                output = _get_from_func()
             elif keystring in dlo_memory.keys():
-                _report(
-                    "[downloadonce] Return from memory {}".format(keystring))
-                output = dlo_memory[keystring]
+                output = _get_from_memory()
             elif (on_disk or force_on_disk) and _check_disk(keystring):
-                _report("[downloadonce] Return from disk {}".format(keystring))
-                output = _load_from_disk(keystring)
+                output = _get_from_disk()
             else:
-                _report("[downloadonce] Download {}".format(keystring))
-                output = func(*args, **kwargs)
-
-            # Save output as cache
-            dlo_memory[keystring] = output
-            if (force_on_disk or on_disk) and not not_save_on_disk:
-                _dump_to_disk(keystring, output)
+                output = _get_from_func()
 
             return copy.deepcopy(output)
 
@@ -168,7 +192,7 @@ def downloadonce(prefix, on_disk=False, is_method=False):
                 return False
             if dlo_cmd == 'uncache_on_disk':
                 if _check_disk(keystring):
-                    os.remove(_dumptarget(keystring))
+                    os.remove(_filepath(keystring))
                     return True
                 return False
             if dlo_cmd == 'cache_on_disk':
